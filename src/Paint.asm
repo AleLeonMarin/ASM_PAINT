@@ -24,12 +24,7 @@
     readMatrix     DB 1 DUP(0)
     READBUFFER     DB 1 DUP(0)
     handle         DW ?
-    CURRENTY DW 0
     imageBuffer    DB 1 DUP(0)
-    imageSize DW 0
-    imageDrawnFlag DB 0
-    initialX DW 220
-    initialY DW 305
 
     SETPOSITION MACRO x, y
         MOV ah, 02h
@@ -305,12 +300,8 @@ CheckMouse PROC
     TEST bx, 01h
     JZ NoClick
 
-    MOV X, CX                 ; Guarda la coordenada X del clic
-    MOV Y, DX                 ; Guarda la coordenada Y del clic
-
-    ; Guardamos las coordenadas iniciales en initialX e initialY
-    MOV [initialX], CX
-    MOV [initialY], DX
+    MOV X, CX               
+    MOV Y, DX               
 
     CALL CLEAR_SCREEN
     CALL PRINT_COORDINATES
@@ -663,8 +654,6 @@ CheckCargar PROC
     JL CheckCargarEndCheck 
     CMP Y, 100
     JG CheckCargarEndCheck
-
-    ; Llamada a loadImageToMemory para cargar la imagen
     CALL loadFile
 
 CheckCargarEndCheck:
@@ -694,8 +683,8 @@ CheckFileName PROC
     JL CheckFileNameEndCheck 
     CMP Y, 180
     JG CheckFileNameEndCheck    
-    CALL ClearFileNameArea          ; Limpia la zona en pantalla donde se muestra el buffer
-    CALL writeText                  ; Inicia la escritura en el buffer
+    CALL ClearFileNameArea          
+    CALL writeText                  
 
 CheckFileNameEndCheck:
     RET
@@ -709,14 +698,16 @@ loadFile PROC
     jc ErrorLoadFile
     mov handle, ax
 
-    MOV Y, 135
-    MOV X, 14
+    
+    MOV Y, 141         
+    MOV X, 21           
+    MOV CX, 80          
 
 LoadCharacterLoop:
     mov ah, 3fh
     mov bx, handle
+    mov dx, OFFSET readMatrix
     mov cx, 1
-    lea dx, readMatrix
     int 21h
     jc EndOfFile
     or ax, ax
@@ -724,28 +715,33 @@ LoadCharacterLoop:
 
     mov al, [readMatrix]
 
+    
     cmp al, '@'
     je NextRow
     cmp al, '%'
     je EndOfFile
 
+
     CALL InterpretColor
     MOV AH, 0CH
+    MOV BH, 0
     MOV CX, X
     MOV DX, Y
-    MOV BH, 0
     INT 10H
+
+   
     INC X
-    CMP X, 420
-    JL LoadCharacterLoop
+    DEC CX
+    JNZ LoadCharacterLoop  
 
 NextRow:
-    INC Y
-    MOV X, 14
-    CMP Y, 473
-    JL LoadCharacterLoop
+    MOV X, 21          
+    ADD Y, 1             
+    MOV CX, 80          
+    JMP LoadCharacterLoop 
 
 EndOfFile:
+   
     mov ah, 3eh
     mov bx, handle
     int 21h
@@ -956,9 +952,9 @@ EndOfInput:
 writeText ENDP
 
 ClearFileNameArea PROC
-    mov dh, 10                       ; Fila (Y) donde comienza el área de "File Name:"
-    mov dl, 57                       ; Columna (X) donde comienza el área de "File Name:"
-    mov cx, 15                       ; Ancho de la zona en caracteres
+    mov dh, 10                       
+    mov dl, 57                       
+    mov cx, 15                       
 
 ClearAreaLoop:
     SETPOSITION dh, dl
@@ -1013,10 +1009,10 @@ SAVE_MATRIX PROC
     JC ErrorSaveFile
 
     MOV handle, AX
-    MOV Y, 137
+    MOV Y, 141
 
 SaveRows:
-    MOV X, 16
+    MOV X, 21
 
 SaveColumns:
     MOV AH, 0DH
@@ -1032,7 +1028,7 @@ SaveColumns:
     MOV CX, 1
     INT 21H
     INC X
-    CMP X, 422
+    CMP X, 420
     JL SaveColumns
 
     MOV BYTE PTR [matrixBuffer], '@'
@@ -1043,7 +1039,7 @@ SaveColumns:
     INT 21H
 
     INC Y
-    CMP Y, 473
+    CMP Y, 470
     JL SaveRows
 
     MOV BYTE PTR [matrixBuffer], '%'
