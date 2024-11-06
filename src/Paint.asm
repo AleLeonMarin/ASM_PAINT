@@ -1,11 +1,6 @@
 .model small
 .stack 100h
 
-MIN_COL_INSERT EQU 450
-MAX_COL_INSERT EQU 620
-MIN_ROW_INSERT EQU 420
-MAX_ROW_INSERT EQU 470
-
 .data
     COLOR_SELECTED db 4
     COLORS         db "COLORS$"
@@ -18,32 +13,23 @@ MAX_ROW_INSERT EQU 470
     YPOS           db "Y:$"
     buffer         DB 6 DUP(0)
     TEN            DW 10
-    text           DB 100 DUP('$')
     COL            DW ?
     FIL            DW ?
     X              DW 220
     Y              DW 305
     SKETCH_X       DW 220
     SKETCH_Y       DW 305
-    fileNameBuffer DB 'FILE.txt', 0
+    fileNameBuffer DB 17 DUP(0)
     matrixBuffer   DB 1 DUP(0)
     readMatrix     DB 1 DUP(0)
     READBUFFER     DB 1 DUP(0)
     handle         DW ?
-    ERROR_MESSAGE  DB 'Error opening file$'
-    ERROR_READING  DB 'Error reading file$'
-    startSaveMsg DB 'Starting save process...', 13, 10, '$'
-    endSaveMsg   DB 'Save process completed.', 13, 10, '$'
-    STARTX DW 0
-    STARTY DW 0
-    CURRENTX DW 0
     CURRENTY DW 0
-    fileImage DB 'facebook.txt', 0
     imageBuffer    DB 1 DUP(0)
     imageSize DW 0
     imageDrawnFlag DB 0
-    initialX dw 0
-    initialY dw 0
+    initialX DW 220
+    initialY DW 305
 
     SETPOSITION MACRO x, y
         MOV ah, 02h
@@ -333,31 +319,8 @@ CheckMouse PROC
     CALL CheckClick
     CALL CheckGuardar
     CALL CheckCargar
-
-    ; Verifica si la imagen está cargada y no se ha dibujado aún
-    CMP imageSize, 0
-    JE NoClick
-    CMP imageDrawnFlag, 1          ; Si ya está dibujada, no la vuelve a dibujar
-    JE NoClick
-
-    ; Debug: Imprimir coordenadas iniciales
-    MOV AX, [initialX]
-    CALL NUM_TO_STRING
-    SETPOSITION 1, 70           ; Ajusta la posición según sea necesario
-    PRINTMESSAGE buffer          ; Muestra la coordenada X
-
-    MOV AX, [initialY]
-    CALL NUM_TO_STRING
-    SETPOSITION 2, 70           ; Ajusta la posición según sea necesario
-    PRINTMESSAGE buffer          ; Muestra la coordenada Y
-
-    ; Llama a displayFromBuffer con las coordenadas iniciales
-    MOV ax, [initialX]             ; Cargar initialX en AX
-    MOV X, ax                      ; Asignar AX a X
-    MOV ax, [initialY]             ; Cargar initialY en AX
-    MOV Y, ax                      ; Asignar AX a Y
-    CALL displayFromBuffer
-    MOV imageDrawnFlag, 1          ; Marca la imagen como dibujada
+    Call CheckInsert
+    Call CheckFileName
 
 NoClick:
     RET
@@ -702,7 +665,7 @@ CheckCargar PROC
     JG CheckCargarEndCheck
 
     ; Llamada a loadImageToMemory para cargar la imagen
-    CALL loadImage
+    CALL loadFile
 
 CheckCargarEndCheck:
     RET
@@ -713,18 +676,35 @@ CheckInsert PROC
     JL CheckInsertEndCheck
     CMP X, 620
     JG CheckInsertEndCheck
-    CMP Y, 42
+    CMP Y, 420
     JL CheckInsertEndCheck 
-    CMP Y, 57
+    CMP Y, 470
     JG CheckInsertEndCheck
+    CALL loadImage
 CheckInsertEndCheck:
     RET
 CheckInsert ENDP
 
+CheckFileName PROC
+    CMP X, 450
+    JL CheckFileNameEndCheck
+    CMP X, 620
+    JG CheckFileNameEndCheck
+    CMP Y, 125
+    JL CheckFileNameEndCheck 
+    CMP Y, 180
+    JG CheckFileNameEndCheck    
+    CALL ClearFileNameArea          ; Limpia la zona en pantalla donde se muestra el buffer
+    CALL writeText                  ; Inicia la escritura en el buffer
+
+CheckFileNameEndCheck:
+    RET
+CheckFileName ENDP
+
 loadFile PROC
     mov ah, 3dh
     mov al, 00
-    lea dx, fileImage
+    lea dx, fileNameBuffer
     int 21h
     jc ErrorLoadFile
     mov handle, ax
@@ -865,98 +845,131 @@ DrawPixel:
 InterpretColor ENDP
 
 loadImage PROC
-    mov ah, 3dh                  ; Abrir archivo
-    mov al, 00                   ; Modo de lectura
-    lea dx, fileImage            ; Dirección del nombre del archivo
+    mov ah, 3dh
+    mov al, 00
+    lea dx, fileNameBuffer
     int 21h
-    jc ErrorLoadImage            ; Si ocurre un error, salta a ErrorLoadImage
-    mov handle, ax               ; Guarda el handle del archivo
+    jc ErrorLoadImage
+    mov handle, ax
 
-    mov si, 0                    ; Reinicia el índice para `imageBuffer`
+    MOV Y, 141
+    MOV X, 21
 
-LoadCharacterLoopForImage:
-    mov ah, 3fh                  ; Servicio de lectura
-    mov bx, handle               ; Handle del archivo
-    mov cx, 1                    ; Leer 1 byte a la vez
-    lea dx, imageBuffer          ; Dirección del buffer
+LoadImageCharacterLoop:
+    mov ah, 3fh
+    mov bx, handle
+    mov cx, 1
+    lea dx, imageBuffer
     int 21h
-    jc FailImage                ; Salir si ocurre un error
+    jc EndOfImage
     or ax, ax
-    jz EndOfImage                ; Salir si llegamos al final del archivo
+    jz EndOfImage
 
-    ; El byte leído ya está en `imageBuffer`, avanza el índice si es necesario
-    inc si                       ; Incrementa el índice para la próxima posición en el buffer
-    jmp LoadCharacterLoopForImage
+    mov al, [imageBuffer]
 
-FailImage:
-    mov ah, 4Ch
-    int 21h
+    cmp al, '@'
+    je NextImageRow
+    cmp al, '%'
+    je EndOfImage
+
+    CALL InterpretColor
+    MOV AH, 0CH
+    MOV CX, X
+    MOV DX, Y
+    MOV BH, 0
+    INT 10H
+    INC X
+    CMP X, 420
+    JL LoadImageCharacterLoop
+
+NextImageRow:
+    INC Y
+    MOV X, 21
+    CMP Y, 473
+    JL LoadImageCharacterLoop
 
 EndOfImage:
-    ; Mostrar el carácter '#' en pantalla como confirmación
-    mov ah, 09h                ; Función de BIOS para mostrar un carácter en modo texto
-    mov al, '#'                 ; Carácter de verificación
-    int 10h                     ; Llamada a la interrupción de video para mostrar el carácter
-
-    ; Cerrar archivo
     mov ah, 3eh
     mov bx, handle
     int 21h
-    ret
+    RET
 
 ErrorLoadImage:
-    ret
+    RET
 loadImage ENDP
 
-displayFromBuffer PROC
-    mov SI, 0                  ; Reiniciamos el índice del buffer
-    
-    MOV X, 141
-    MOV Y, 21
+writeText PROC
+    mov cx, 15
+    lea di, fileNameBuffer
+ClearBuffer:
+    mov byte ptr [di], ' '
+    inc di
+    loop ClearBuffer
 
-DisplayBitLoop:
-    mov al, [imageBuffer + SI]  ; Accedemos al byte actual en el buffer
-    mov bx, 0                   ; Reiniciamos BX para contar bits dentro del byte
+    mov si, 0
+    mov dh, 10
+    mov dl, 57
 
-ProcessBit:
-    shl al, 1                   ; Desplazamos el bit más significativo a la posición de acarreo
-    jc BitIsOne                 ; Si el bit desplazado es 1, salta a BitIsOne
+SetInitialCursorPos:
+    SETPOSITION dh, dl
 
-    ; Si el bit es 0, simplemente avanzamos
-    inc X                       ; Incrementamos X para la siguiente posición en pantalla
-    cmp X, 420                  ; Limita el valor máximo de X
-    jl CheckNextBit             ; Si X es menor a 420, sigue al siguiente bit
+MainLoop:
+    mov ah, 0
+    int 16h
+    cmp al, 13
+    je EndOfInput
+    cmp al, 8
+    je HandleBackspace
+    cmp si, 30
+    jge MainLoop
 
-    ; Cambio de línea si X supera 420
-    inc Y
-    mov ax, 21         ; Restablece X a la posición inicial
-    mov X, ax
-    cmp Y, 473                  ; Limita el valor máximo de Y
-    jl CheckNextBit
-    jmp EndOfDisplay            ; Si Y supera 473, terminamos la impresión
+    mov [fileNameBuffer + si], al
+    inc si
 
-BitIsOne:
-    ; Si el bit es 1, procesamos el color y dibujamos el punto
-    CALL InterpretColor
-    mov ah, 0CH
-    mov cx, X
-    mov dx, Y
-    mov bh, 0
-    int 10H
-    inc X                       ; Incrementamos X para la siguiente posición en pantalla
+    mov ah, 0Eh
+    int 10h
 
-CheckNextBit:
-    inc bx                      ; Avanzamos al siguiente bit en el byte
-    cmp bx, 8                   ; Si hemos procesado 8 bits, avanzamos al siguiente byte
-    jl ProcessBit
+    inc dl
+    SETPOSITION dh, dl
+    jmp MainLoop
 
-    ; Avanzamos al siguiente byte en el buffer
-    inc SI
-    jmp DisplayBitLoop          ; Continuamos al siguiente byte
+HandleBackspace:
+    cmp si, 0
+    je MainLoop
+    dec si
+    mov [fileNameBuffer + si], ' '
+    dec dl
+    SETPOSITION dh, dl
+    mov ah, 0Eh
+    mov al, ' '
+    int 10h
+    SETPOSITION dh, dl
+    jmp MainLoop
 
-EndOfDisplay:
+EndOfInput:
+    mov [fileNameBuffer + si], '$'
+    mov dh, 10
+    mov dl, 57
+    SETPOSITION dh, dl
+    PRINTMESSAGE fileNameBuffer
     ret
-displayFromBuffer ENDP
+writeText ENDP
+
+ClearFileNameArea PROC
+    mov dh, 10                       ; Fila (Y) donde comienza el área de "File Name:"
+    mov dl, 57                       ; Columna (X) donde comienza el área de "File Name:"
+    mov cx, 15                       ; Ancho de la zona en caracteres
+
+ClearAreaLoop:
+    SETPOSITION dh, dl
+    mov ah, 0Eh
+    mov al, ' '
+    int 10h
+    inc dl
+    loop ClearAreaLoop
+
+    ret
+ClearFileNameArea ENDP
 
 
 HexToByte PROC
