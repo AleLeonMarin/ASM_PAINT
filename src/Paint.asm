@@ -1,7 +1,6 @@
 .model small
 .stack 100h
 
-; Ajustes en las definiciones
 MIN_COL_INSERT EQU 450
 MAX_COL_INSERT EQU 620
 MIN_ROW_INSERT EQU 420
@@ -17,9 +16,9 @@ MAX_ROW_INSERT EQU 470
     FILENAME       db "File Name:$"
     XPOS           db "X:$"
     YPOS           db "Y:$"
-    buffer         DB 6 DUP(0)        ; Buffer para almacenar el número convertido a cadena
-    TEN            DW 10              ; Valor constante 10 para la división
-    text           DB 100 DUP('$')    ; Buffer para almacenar el texto ingresado por el usuario
+    buffer         DB 6 DUP(0)
+    TEN            DW 10
+    text           DB 100 DUP('$')
     COL            DW ?
     FIL            DW ?
     X              DW 220
@@ -27,8 +26,24 @@ MAX_ROW_INSERT EQU 470
     SKETCH_X       DW 220
     SKETCH_Y       DW 305
     fileNameBuffer DB 'FILE.txt', 0
-    matrixBuffer   DB 500 DUP(0)
+    matrixBuffer   DB 1 DUP(0)
+    readMatrix     DB 1 DUP(0)
+    READBUFFER     DB 1 DUP(0)
     handle         DW ?
+    ERROR_MESSAGE  DB 'Error opening file$'
+    ERROR_READING  DB 'Error reading file$'
+    startSaveMsg DB 'Starting save process...', 13, 10, '$'
+    endSaveMsg   DB 'Save process completed.', 13, 10, '$'
+    STARTX DW 0
+    STARTY DW 0
+    CURRENTX DW 0
+    CURRENTY DW 0
+    fileImage DB 'facebook.txt', 0
+    imageBuffer    DB 1 DUP(0)
+    imageSize DW 0
+    imageDrawnFlag DB 0
+    initialX dw 0
+    initialY dw 0
 
     SETPOSITION MACRO x, y
         MOV ah, 02h
@@ -54,72 +69,57 @@ MAX_ROW_INSERT EQU 470
     ENDM
 
     DRAW_SQUARE MACRO x_inicial, x_final, y_inicial, y_final, color
-        MOV AH, 6          ; Función para scroll hacia arriba (limpiar pantalla)
-        MOV AL, 0          ; Número de líneas a desplazar (0 significa llenar con el color)
-        MOV BH, color      ; Color de fondo
-        MOV CH, y_inicial  ; Coordenada Y inicial
-        MOV CL, x_inicial  ; Coordenada X inicial
-        MOV DH, y_final    ; Coordenada Y final
-        MOV DL, x_final    ; Coordenada X final
-        INT 10H            ; Llamada a la interrupción del BIOS de video
+        MOV AH, 6
+        MOV AL, 0
+        MOV BH, color
+        MOV CH, y_inicial
+        MOV CL, x_inicial
+        MOV DH, y_final
+        MOV DL, x_final
+        INT 10H
     ENDM
 
 .code
 main PROC
-    ; Inicialización de datos
     MOV ax, @DATA
     MOV ds, ax
-
-    ; Configuración de color de fondo
     MOV ah, 00
     MOV al, 12H
     INT 10H
 
-    ; Inicialización del ratón
     MOV ax, 00 
     INT 33h
     MOV ax, 01h 
     INT 33h
 
-    ; Imprimir etiquetas para cada botón
     SETPOSITION 1, 24
     PRINTMESSAGE COLORS
-
     SETPOSITION 24, 64
     PRINTMESSAGE CLEAR
-
     SETPOSITION 27, 64
     PRINTMESSAGE INSERT
-
     SETPOSITION 1, 64
     PRINTMESSAGE SAVE
-
     SETPOSITION 4, 64
     PRINTMESSAGE LOAD
-
     SETPOSITION 8, 62
     PRINTMESSAGE FILENAME
-
     SETPOSITION 19, 61
     PRINTMESSAGE XPOS
-
     SETPOSITION 20, 61
     PRINTMESSAGE YPOS
 
-    ; Pintar los colores
     DRAW_SQUARE 5, 10, 2, 3, 1
     DRAW_SQUARE 15, 20, 2, 3, 2
     DRAW_SQUARE 25, 30, 2, 3, 3 
     DRAW_SQUARE 35, 40, 2, 3, 4 
     DRAW_SQUARE 45, 50, 2, 3, 5
-
     DRAW_SQUARE 5, 10, 5, 6, 6
     DRAW_SQUARE 15, 20, 5, 6, 10
     DRAW_SQUARE 25, 30, 5, 6, 13
     DRAW_SQUARE 35, 40, 5, 6, 14
-    DRAW_SQUARE 45, 50, 5, 6, 15  
+    DRAW_SQUARE 45, 50, 5, 6, 15
 
-    ; Área del botón de guardar
     MOV COL, 485
     MOV cx, 100
 Save_Horizontal: 
@@ -140,7 +140,6 @@ Save_Vertical:
     POP cx 
     LOOP Save_Vertical
 
-    ; Área del botón de cargar
     MOV COL, 450
     MOV cx, 170
 Load_Horizontal:
@@ -161,7 +160,6 @@ Load_Vertical:
     POP cx
     LOOP Load_Vertical
 
-    ; Área del nombre de archivo
     MOV COL, 450 
     MOV cx, 170
 Name_Horizontal:
@@ -182,7 +180,6 @@ Name_Vertical:
     POP cx 
     LOOP Name_Vertical
 
-    ; Área del botón de limpiar
     MOV COL, 485
     MOV cx, 100
 Clear_Horizontal:
@@ -203,7 +200,6 @@ Clear_Vertical:
     POP cx
     LOOP Clear_Vertical
 
-    ; Área del botón de insertar
     MOV COL, 450
     MOV cx, 170
 Insert_Horizontal:
@@ -224,7 +220,6 @@ Insert_Vertical:
     POP cx
     LOOP Insert_Vertical
 
-    ; Dibujar áreas de zona de trabajo
     MOV cx, 400
     MOV COL, 20
 Sketch_horizontal: 
@@ -245,7 +240,6 @@ Sketch_vertical:
     POP cx
     LOOP Sketch_vertical
 
-    ; Área de selección de color
     MOV COL, 20
     MOV cx, 400
 Colors_Horizontal:
@@ -284,13 +278,11 @@ PRINT_COORDINATES PROC
 PRINT_COORDINATES ENDP
 
 NUM_TO_STRING PROC
-    ; Convertir el número en AX a cadena en el buffer
     PUSH DX
     PUSH CX
     PUSH BX
     MOV SI, OFFSET buffer
     MOV CX, 0
-
     CMP AX, 0
     JNE ConvertLoop
     MOV BYTE PTR [SI], '0'
@@ -322,15 +314,17 @@ EndConvert:
 NUM_TO_STRING ENDP
 
 CheckMouse PROC
-    ; Verificar si el botón izquierdo del ratón se ha presionado
     MOV ax, 03h
     INT 33h
-
     TEST bx, 01h
     JZ NoClick
 
-    MOV X, CX
-    MOV Y, DX
+    MOV X, CX                 ; Guarda la coordenada X del clic
+    MOV Y, DX                 ; Guarda la coordenada Y del clic
+
+    ; Guardamos las coordenadas iniciales en initialX e initialY
+    MOV [initialX], CX
+    MOV [initialY], DX
 
     CALL CLEAR_SCREEN
     CALL PRINT_COORDINATES
@@ -339,6 +333,31 @@ CheckMouse PROC
     CALL CheckClick
     CALL CheckGuardar
     CALL CheckCargar
+
+    ; Verifica si la imagen está cargada y no se ha dibujado aún
+    CMP imageSize, 0
+    JE NoClick
+    CMP imageDrawnFlag, 1          ; Si ya está dibujada, no la vuelve a dibujar
+    JE NoClick
+
+    ; Debug: Imprimir coordenadas iniciales
+    MOV AX, [initialX]
+    CALL NUM_TO_STRING
+    SETPOSITION 1, 70           ; Ajusta la posición según sea necesario
+    PRINTMESSAGE buffer          ; Muestra la coordenada X
+
+    MOV AX, [initialY]
+    CALL NUM_TO_STRING
+    SETPOSITION 2, 70           ; Ajusta la posición según sea necesario
+    PRINTMESSAGE buffer          ; Muestra la coordenada Y
+
+    ; Llama a displayFromBuffer con las coordenadas iniciales
+    MOV ax, [initialX]             ; Cargar initialX en AX
+    MOV X, ax                      ; Asignar AX a X
+    MOV ax, [initialY]             ; Cargar initialY en AX
+    MOV Y, ax                      ; Asignar AX a Y
+    CALL displayFromBuffer
+    MOV imageDrawnFlag, 1          ; Marca la imagen como dibujada
 
 NoClick:
     RET
@@ -372,9 +391,7 @@ CheckClearZone PROC
     JL ENDZONE
     CMP Y, 410
     JG ENDZONE
-
     CALL PINTARLIMPIAR
-
 ENDZONE:
     RET
 CheckClearZone ENDP
@@ -423,15 +440,12 @@ Colors_Vertical1:
 PINTARLIMPIAR ENDP
 
 read_Key PROC 
-    ; Leer el estado de una tecla
     MOV ah, 01h
     INT 16h
     JZ NoKeyFirstTwoTeclas
 
     MOV ah, 00h
     INT 16h
-
-    ; Verificar los códigos de las teclas de dirección
     CMP ah, 48h
     JE Tcl_up
     CMP ah, 50h
@@ -440,7 +454,6 @@ read_Key PROC
     JE Tcl_left
     CMP ah, 4Dh
     JE Tcl_right
-
     JMP NoKeyFirstTwoTeclas
 
 Tcl_up:
@@ -687,74 +700,264 @@ CheckCargar PROC
     JL CheckCargarEndCheck 
     CMP Y, 100
     JG CheckCargarEndCheck
-    CALL loadFile
+
+    ; Llamada a loadImageToMemory para cargar la imagen
+    CALL loadImage
 
 CheckCargarEndCheck:
     RET
 CheckCargar ENDP
 
-loadFile PROC
-    PUSH AX DX CX BX
-    MOV AH, 3DH
-    MOV AL, 0
-    LEA DX, fileNameBuffer
-    INT 21h
-    JC LoadExit
-
-    MOV handle, AX
-
-    MOV AH, 3FH
-    LEA DX, matrixBuffer
-    MOV CX, 500
-    INT 21H
-    JC LoadError
-
-    MOV AH, 3EH
-    MOV BX, handle
-    INT 21H
-
-    CALL DisplayMatrix
-    JMP LoadExit
-
-LoadError:
-    MOV DX, OFFSET SAVE
-    MOV AH, 09H
-    INT 21H
-
-LoadExit:
-    POP BX CX DX AX
+CheckInsert PROC
+    CMP X, 450
+    JL CheckInsertEndCheck
+    CMP X, 620
+    JG CheckInsertEndCheck
+    CMP Y, 42
+    JL CheckInsertEndCheck 
+    CMP Y, 57
+    JG CheckInsertEndCheck
+CheckInsertEndCheck:
     RET
-loadFile ENDP
+CheckInsert ENDP
 
-DisplayMatrix PROC
-    MOV SI, OFFSET matrixBuffer
-    MOV Y, 141
-    MOV DI, 0
-DisplayRows:
-    MOV X, 21
-DisplayColumns:
-    MOV AL, [matrixBuffer + DI]
-    CMP AL, '@'
-    JE NextRow
-    CMP AL, '%'
-    JE EndDisplay
+loadFile PROC
+    mov ah, 3dh
+    mov al, 00
+    lea dx, fileImage
+    int 21h
+    jc ErrorLoadFile
+    mov handle, ax
 
-    CALL HexToByte
-    DRAW_PIXEL AL, X, Y
-    PUSH AX
+    MOV Y, 135
+    MOV X, 14
 
+LoadCharacterLoop:
+    mov ah, 3fh
+    mov bx, handle
+    mov cx, 1
+    lea dx, readMatrix
+    int 21h
+    jc EndOfFile
+    or ax, ax
+    jz EndOfFile
+
+    mov al, [readMatrix]
+
+    cmp al, '@'
+    je NextRow
+    cmp al, '%'
+    je EndOfFile
+
+    CALL InterpretColor
+    MOV AH, 0CH
+    MOV CX, X
+    MOV DX, Y
+    MOV BH, 0
+    INT 10H
     INC X
-    INC DI
-    JMP DisplayColumns
+    CMP X, 420
+    JL LoadCharacterLoop
 
 NextRow:
     INC Y
-    INC DI
-    JMP DisplayRows
+    MOV X, 14
+    CMP Y, 473
+    JL LoadCharacterLoop
 
-EndDisplay:
+EndOfFile:
+    mov ah, 3eh
+    mov bx, handle
+    int 21h
     RET
-DisplayMatrix ENDP
+
+ErrorLoadFile:
+    RET
+loadFile ENDP
+
+InterpretColor PROC
+    CMP AL, '0'
+    JE ColorNegro
+    CMP AL, '1'
+    JE ColorAzul
+    CMP AL, '2'
+    JE ColorVerde
+    CMP AL, '3'
+    JE ColorCian
+    CMP AL, '4'
+    JE ColorRojo
+    CMP AL, '5'
+    JE ColorPurpura
+    CMP AL, '6'
+    JE ColorMarron
+    CMP AL, '7'
+    JE ColorBlancoOpaco
+    CMP AL, '8'
+    JE ColorGris
+    CMP AL, '9'
+    JE ColorAzulClaro
+    CMP AL, 'A'
+    JE ColorVerdeClaro
+    CMP AL, 'B'
+    JE ColorCelesteClaro
+    CMP AL, 'C'
+    JE ColorRojoClaro
+    CMP AL, 'D'
+    JE ColorRosado
+    CMP AL, 'E'
+    JE ColorAmarillo
+    CMP AL, 'F'
+    JE ColorBlancoBrillante
+
+    MOV AL, 0
+    JMP DrawPixel
+
+ColorNegro:
+    MOV AL, 0
+    JMP DrawPixel
+ColorAzul:
+    MOV AL, 1
+    JMP DrawPixel
+ColorVerde:
+    MOV AL, 2
+    JMP DrawPixel
+ColorCian:
+    MOV AL, 3
+    JMP DrawPixel
+ColorRojo:
+    MOV AL, 4
+    JMP DrawPixel
+ColorPurpura:
+    MOV AL, 5
+    JMP DrawPixel
+ColorMarron:
+    MOV AL, 6
+    JMP DrawPixel
+ColorBlancoOpaco:
+    MOV AL, 7
+    JMP DrawPixel
+ColorGris:
+    MOV AL, 8
+    JMP DrawPixel
+ColorAzulClaro:
+    MOV AL, 9
+    JMP DrawPixel
+ColorVerdeClaro:
+    MOV AL, 10
+    JMP DrawPixel
+ColorCelesteClaro:
+    MOV AL, 11
+    JMP DrawPixel
+ColorRojoClaro:
+    MOV AL, 12
+    JMP DrawPixel
+ColorRosado:
+    MOV AL, 13
+    JMP DrawPixel
+ColorAmarillo:
+    MOV AL, 14
+    JMP DrawPixel
+ColorBlancoBrillante:
+    MOV AL, 15
+
+DrawPixel:
+    RET
+InterpretColor ENDP
+
+loadImage PROC
+    mov ah, 3dh                  ; Abrir archivo
+    mov al, 00                   ; Modo de lectura
+    lea dx, fileImage            ; Dirección del nombre del archivo
+    int 21h
+    jc ErrorLoadImage            ; Si ocurre un error, salta a ErrorLoadImage
+    mov handle, ax               ; Guarda el handle del archivo
+
+    mov si, 0                    ; Reinicia el índice para `imageBuffer`
+
+LoadCharacterLoopForImage:
+    mov ah, 3fh                  ; Servicio de lectura
+    mov bx, handle               ; Handle del archivo
+    mov cx, 1                    ; Leer 1 byte a la vez
+    lea dx, imageBuffer          ; Dirección del buffer
+    int 21h
+    jc FailImage                ; Salir si ocurre un error
+    or ax, ax
+    jz EndOfImage                ; Salir si llegamos al final del archivo
+
+    ; El byte leído ya está en `imageBuffer`, avanza el índice si es necesario
+    inc si                       ; Incrementa el índice para la próxima posición en el buffer
+    jmp LoadCharacterLoopForImage
+
+FailImage:
+    mov ah, 4Ch
+    int 21h
+
+EndOfImage:
+    ; Mostrar el carácter '#' en pantalla como confirmación
+    mov ah, 09h                ; Función de BIOS para mostrar un carácter en modo texto
+    mov al, '#'                 ; Carácter de verificación
+    int 10h                     ; Llamada a la interrupción de video para mostrar el carácter
+
+    ; Cerrar archivo
+    mov ah, 3eh
+    mov bx, handle
+    int 21h
+    ret
+
+ErrorLoadImage:
+    ret
+loadImage ENDP
+
+displayFromBuffer PROC
+    mov SI, 0                  ; Reiniciamos el índice del buffer
+    
+    MOV X, 141
+    MOV Y, 21
+
+DisplayBitLoop:
+    mov al, [imageBuffer + SI]  ; Accedemos al byte actual en el buffer
+    mov bx, 0                   ; Reiniciamos BX para contar bits dentro del byte
+
+ProcessBit:
+    shl al, 1                   ; Desplazamos el bit más significativo a la posición de acarreo
+    jc BitIsOne                 ; Si el bit desplazado es 1, salta a BitIsOne
+
+    ; Si el bit es 0, simplemente avanzamos
+    inc X                       ; Incrementamos X para la siguiente posición en pantalla
+    cmp X, 420                  ; Limita el valor máximo de X
+    jl CheckNextBit             ; Si X es menor a 420, sigue al siguiente bit
+
+    ; Cambio de línea si X supera 420
+    inc Y
+    mov ax, 21         ; Restablece X a la posición inicial
+    mov X, ax
+    cmp Y, 473                  ; Limita el valor máximo de Y
+    jl CheckNextBit
+    jmp EndOfDisplay            ; Si Y supera 473, terminamos la impresión
+
+BitIsOne:
+    ; Si el bit es 1, procesamos el color y dibujamos el punto
+    CALL InterpretColor
+    mov ah, 0CH
+    mov cx, X
+    mov dx, Y
+    mov bh, 0
+    int 10H
+    inc X                       ; Incrementamos X para la siguiente posición en pantalla
+
+CheckNextBit:
+    inc bx                      ; Avanzamos al siguiente bit en el byte
+    cmp bx, 8                   ; Si hemos procesado 8 bits, avanzamos al siguiente byte
+    jl ProcessBit
+
+    ; Avanzamos al siguiente byte en el buffer
+    inc SI
+    jmp DisplayBitLoop          ; Continuamos al siguiente byte
+
+EndOfDisplay:
+    ret
+displayFromBuffer ENDP
+
 
 HexToByte PROC
     CMP AL, '0'
@@ -792,50 +995,54 @@ HexToByte ENDP
 SAVE_MATRIX PROC
     MOV AH, 3CH
     LEA DX, fileNameBuffer
-    MOV CX, 1
+    MOV CX, 0
     INT 21h
     JC ErrorSaveFile
 
     MOV handle, AX
-    MOV Y, 141
+    MOV Y, 137
 
 SaveRows:
-    MOV DI, 0
-    MOV X, 21
-SaveColummns:
+    MOV X, 16
+
+SaveColumns:
     MOV AH, 0DH
     MOV BH, 00H
     MOV CX, X
     MOV DX, Y
-    INT 10h
+    INT 10H
     CALL ByteToHex
-    MOV [matrixBuffer + DI], AL
-    INC DI
-    INC X
-    CMP X, 420
-    JL SaveColummns
-
-    MOV BYTE PTR [matrixBuffer + DI], '@'
-    INC DI
-    LEA DX, matrixBuffer
     MOV AH, 40H
     MOV BX, handle
-    MOV CX, DI
+    LEA DX, matrixBuffer
+    MOV [matrixBuffer], AL
+    MOV CX, 1
     INT 21H
+    INC X
+    CMP X, 422
+    JL SaveColumns
+
+    MOV BYTE PTR [matrixBuffer], '@'
+    MOV AH, 40H
+    MOV BX, handle
+    LEA DX, matrixBuffer
+    MOV CX, 1
+    INT 21H
+
     INC Y
-    CMP Y, 470
+    CMP Y, 473
     JL SaveRows
 
-    MOV BYTE PTR [matrixBuffer + DI], '%'
-    MOV AH, 40h
-    LEA DX, [matrixBuffer + DI]
+    MOV BYTE PTR [matrixBuffer], '%'
+    MOV AH, 40H
     MOV BX, handle
+    LEA DX, matrixBuffer
     MOV CX, 1
-    INT 21h
+    INT 21H
 
-    MOV AH, 3Eh
+    MOV AH, 3EH
     MOV BX, handle
-    INT 21h
+    INT 21H
 
     CALL CLEAR_SCREEN
     CALL PRINT_COORDINATES
@@ -845,56 +1052,14 @@ ErrorSaveFile:
 SAVE_MATRIX ENDP
 
 ByteToHex PROC
-    MOV AL, AL
     AND AL, 0Fh
     ADD AL, '0'
     CMP AL, '9'
-    JLE SaveHex
+    JLE ByteToHexEnd
     ADD AL, 7
-SaveHex:
-    MOV [matrixBuffer], AL
+ByteToHexEnd:
     RET
 ByteToHex ENDP
-
-ReadLoop:
-    MOV ah, 00h
-    INT 16h
-    CMP al, 0dh
-    JE Exit
-    CMP al, 08h
-    JE HandleBackspace
-    CMP al, 20h
-    JB ReadLoop
-    CMP al, 7Eh
-    JA ReadLoop
-
-    MOV ah, 03h
-    INT 10h
-    CMP dl, 90
-    JAE ReadLoop
-    MOV ah, 0Eh
-    INT 10h
-    JMP ReadLoop
-
-HandleBackspace:
-    MOV ah, 03h
-    INT 10h
-    CMP dl, 56
-    JLE ReadLoop
-    DEC dl
-    MOV ah, 02h
-    INT 10h
-    MOV al, ' '
-    MOV ah, 0Eh
-    INT 10h
-    DEC dl
-    MOV ah, 02h
-    INT 10h
-    JMP ReadLoop
-
-Exit:
-    MOV ax, 4C00h
-    INT 21h
 
 main ENDP
 end main

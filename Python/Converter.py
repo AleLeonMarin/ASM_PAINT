@@ -1,9 +1,9 @@
-from PIL import Image
 import tkinter as tk
 from tkinter import filedialog, messagebox
+from PIL import Image
 import numpy as np
 
-# Definir una paleta manual basada en la tabla de colores
+# Definir la paleta de colores basada en la tabla de colores
 palette = [
     (0, 0, 0),        # 0 - Negro
     (0, 0, 255),      # 1 - Azul
@@ -27,23 +27,22 @@ palette = [
 def closest_color(rgb):
     r, g, b = rgb
     color_diffs = []
-    for color in palette:
+    for i, color in enumerate(palette):
         cr, cg, cb = color
         color_diff = np.sqrt((r - cr)**2 + (g - cg)**2 + (b - cb)**2)
-        color_diffs.append((color_diff, palette.index(color)))
+        color_diffs.append((color_diff, i))
     return min(color_diffs, key=lambda x: x[0])[1]  # Devuelve el índice del color más cercano
 
-# Convertir BMP a texto
-def convert_bmp_to_text(input_image_path, output_text_path):
+# Convertir imagen a texto
+def convert_image_to_text(input_image_path, output_text_path):
     try:
         img = Image.open(input_image_path).convert('RGB')  # Convertir la imagen a RGB
-
-        width, height = img.size
+        img = img.resize((64, 64))  # Redimensionar la imagen a 64x64
 
         with open(output_text_path, 'w') as f:
             # Recorrer cada píxel de la imagen
-            for y in range(height):
-                for x in range(width):
+            for y in range(img.height):
+                for x in range(img.width):
                     pixel_value = img.getpixel((x, y))  # Obtener el valor RGB del píxel
                     closest_color_idx = closest_color(pixel_value)  # Obtener el índice del color más cercano
                     hex_value = format(closest_color_idx, 'X')  # Convertir el índice a hexadecimal
@@ -55,8 +54,8 @@ def convert_bmp_to_text(input_image_path, output_text_path):
     except Exception as e:
         messagebox.showerror("Error", f"Se produjo un error: {e}")
 
-# Convertir texto a BMP
-def convert_text_to_bmp(input_text_path, output_image_path, width, height):
+# Convertir texto a imagen BMP
+def convert_text_to_bmp(input_text_path, output_image_path, width=64, height=64):
     try:
         img = Image.new('RGB', (width, height))  # Crear una nueva imagen
         with open(input_text_path, 'r') as f:
@@ -79,8 +78,8 @@ def convert_text_to_bmp(input_text_path, output_image_path, width, height):
 # Seleccionar archivo
 def select_file():
     file_path = filedialog.askopenfilename(
-        title="Selecciona una imagen BMP",
-        filetypes=[("Imágenes BMP", "*.bmp"), ("Todos los archivos", "*.*")]
+        title="Selecciona una imagen",
+        filetypes=[("Archivos de imagen", "*.png;*.jpg;*.bmp"), ("Todos los archivos", "*.*")]
     )
     return file_path
 
@@ -107,7 +106,7 @@ def main():
     root = tk.Tk()
     root.withdraw()
 
-    # Paso 1: Seleccionar archivo BMP
+    # Paso 1: Seleccionar archivo de imagen
     input_image_path = select_file()
     if not input_image_path:
         return
@@ -117,8 +116,8 @@ def main():
     if not output_text_path:
         return
 
-    # Convertir BMP a texto
-    convert_bmp_to_text(input_image_path, output_text_path)
+    # Convertir imagen a texto
+    convert_image_to_text(input_image_path, output_text_path)
 
     # Paso 3: Restaurar la imagen desde el texto
     output_image_path = save_image_file()
@@ -126,7 +125,7 @@ def main():
         return
 
     # Restaurar texto a BMP
-    convert_text_to_bmp(output_text_path, output_image_path, 64, 64)  # Ajusta el tamaño según la imagen original
+    convert_text_to_bmp(output_text_path, output_image_path)  # Ajusta el tamaño a 64x64
 
 if __name__ == "__main__":
     main()
